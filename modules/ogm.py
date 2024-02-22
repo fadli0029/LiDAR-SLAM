@@ -59,6 +59,11 @@ class OccupancyGridMap:
             z_t = meas[i]
             self.update_map(x_t, z_t)
 
+        pmf = 1./(1 + np.exp(self.grid_map_log_odds))
+        self.grid_map[pmf > 0.5] = 1.
+        self.grid_map[pmf <= 0.5] = 0.
+        self.grid_map[pmf == 0.5] = 0.5
+
     def plot_log_odds_map(self):
         """
         Plot the occupancy grid map.
@@ -89,11 +94,6 @@ class OccupancyGridMap:
         Returns:
             None
         """
-        temp = 1./(1 + np.exp(self.grid_map_log_odds))
-        self.grid_map[temp > 0.5] = 1.
-        self.grid_map[temp <= 0.5] = 0.
-        self.grid_map[temp == 0.5] = 0.5
-
         plt.figure(figsize=(10, 10))
         plt.imshow(self.grid_map, cmap='gray')
         plt.show()

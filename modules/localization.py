@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 
 WHEEL_DIAMETER = 0.254
@@ -6,27 +7,89 @@ DIST_PER_TICK = 0.0022
 FREQ = 40
 DELTA_T = 1 / FREQ
 
-def diff_drive_motion_model(state, v, w, dt):
+def odometry(x_t, v_t, w_t, dt):
     """
-    Compute the next state (x, y, theta) of the robot.
+    Compute the odometry of the robot.
 
     Args:
-        state: The state of the robot with shape (3,)
-        v:     The velocity of the robot.
-        w:     The angular velocity of the robot.
-        dt:    The time step.
+        x_t: The state of the robot with shape (3,)
+        v_t: The velocity of the robot.
+        w_t: The angular velocity of the robot.
+        dt:  The time step.
 
     Returns:
-        The next state of the robot.
+        The odometry (pose) of the robot at t+1.
     """
-    dtheta = w[-1]*dt
+    dtheta = w_t[-1]*dt
 
-    x, y, theta = state
-    x += v*dt*(np.sin(dtheta/2)/(dtheta/2))*np.cos(theta + dtheta/2)
-    y += v*dt*(np.sin(dtheta/2)/(dtheta/2))*np.sin(theta + dtheta/2)
+    x, y, theta = x_t
+    x += v_t*dt*(np.sin(dtheta/2)/(dtheta/2))*np.cos(theta + dtheta/2)
+    y += v_t*dt*(np.sin(dtheta/2)/(dtheta/2))*np.sin(theta + dtheta/2)
     theta += dtheta
 
     return [x, y, theta]
+
+def poses_from_odometry(v_ts, w_ts, x_0=[0., 0., 0.], dt=1./40.):
+    """
+    Compute the poses of the robot for its entire trajectory from
+    odometry (pose estimates) measurements generated from the
+    encoder and gyro data.
+
+    Args:
+        v_ts: The encoder data with shape (N, 4)
+        w_ts:    The gyro data with shape (N, 3)
+        x_0:     The initial pose of the robot.
+        dt:      The time step.
+
+    Returns:
+        The poses x_ts of the robot for its entire trajectory,
+        with shape (N, 3).
+    """
+    x_ts = [x_0]
+    for i in range(1, v_ts.shape[0]):
+        v_curr = v_from_encoder(v_ts[i])
+        w_curr = w_ts[i]
+        x_curr = x_ts[-1]
+        x_next = odometry(x_curr, v_curr, w_curr, dt)
+        x_ts.append(x_next)
+    return np.array(x_ts)
+
+def plot_trajectory(x_ts, increments=100, figsize=(10, 10)):
+    """
+    Plot the trajectory of the robot.
+
+    Args:
+        x_ts: The poses of the robot with shape (N, 3).
+        increments: The number of points to skip when
+                    plotting the orientation of the robot.
+        figsize: The size of the figure.
+    """
+    x = x_ts[:, 0]
+    y = x_ts[:, 1]
+    yaw = x_ts[:, 2]
+
+    # Plot the trajectory
+    plt.figure(figsize=figsize)
+    plt.plot(x, y, label='Trajectory', color='blue')
+
+    # Mark the start (black) and end (green) points
+    plt.plot(x[0], y[0], marker='s', color='black', label='Start')
+    plt.plot(x[-1], y[-1], marker='s', color='green', label='End')
+
+    # Plot the orientation of the robot
+    for i in range(0, len(x), increments):
+        dx = np.cos(yaw[i]) * 0.5 # to control arrow length
+        dy = np.sin(yaw[i]) * 0.5 # to control arrow length
+
+        plt.quiver(x[i], y[i], dx, dy, color='red', scale=10,
+                   width=0.005, headwidth=2, headlength=5)
+
+    plt.xlabel('x (m)')
+    plt.ylabel('y (m)')
+    plt.title('Robot Trajectory and Orientation')
+    plt.legend()
+    plt.axis('equal')
+    plt.show()
 
 def v_from_encoder(counts):
     """

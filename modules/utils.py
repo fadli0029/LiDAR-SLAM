@@ -1,3 +1,4 @@
+import open3d as o3d
 import numpy as np
 
 def load_data(dataset_num, dataset_names):
@@ -79,49 +80,38 @@ def synchronize_sensors(*sensors, base_sensor_index=0):
             sensor_indices = [find_nearest(sensor.stamps, stamp) for stamp in base_sensor.stamps]
             sensor.update_synced_data(sensor_indices)
 
-class Encoder:
-    def __init__(self, data):
-        self.counts = data["counts"]
-        self.stamps = data["stamps"]
-        self.counts_synced = None
-        self.stamps_synced = None
+def transform_points(points, T):
+    """
+    Transform a set of points using a transformation matrix.
 
-    def update_synced_data(self, indices):
-        self.counts_synced = self.counts[indices]
-        self.stamps_synced = self.stamps[indices]
+    Args:
+        points: The points to transform, shape (N, 3).
+        T: The transformation matrix, shape (4, 4).
 
-class Imu:
-    def __init__(self, data):
-        self.gyro = data["angular_velocity"]
-        self.acc = data["linear_acceleration"]
-        self.stamps = data["stamps"]
-        self.gyro_synced = None
-        self.acc_synced = None
-        self.stamps_synced = None
+    Returns:
+        The transformed points.
+    """
+    return np.dot(T[:3, :3], points.T).T + T[:3, 3]
 
-    def update_synced_data(self, indices):
-        self.gyro_synced = self.gyro[indices]
-        self.acc_synced = self.acc[indices]
-        self.stamps_synced = self.stamps[indices]
+def view_point_cloud(pcl):
+    if pcl.shape[1] > 3:
+        # XYZRGB point cloud
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pcl[:, :3])
 
-class Lidar:
-    def __init__(self, data):
-        self.ranges = data["ranges"]
-        self.stamps = data["stamps"]
-        self.ranges_synced = None
-        self.stamps_synced = None
+        if np.max(pcl[:, 3:]) > 1:
+            pcd.colors = o3d.utility.Vector3dVector(pcl[:, 3:] / 255.0)
+        else:
+            pcd.colors = o3d.utility.Vector3dVector(pcl[:, 3:])
 
-        self.angle_min = data["angle_min"]
-        self.angle_max = data["angle_max"]
-        self.angle_increment = data["angle_increment"]
-        self.range_min = data["range_min"]
-        self.range_max = data["range_max"]
+        o3d.visualization.draw_geometries([pcd])
 
-    def update_synced_data(self, indices):
-        self.ranges_synced = self.ranges[indices]
-        self.stamps_synced = self.stamps[indices]
+    elif pcl.shape[1] == 3:
+        # XYZ point cloud
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pcl)
 
-class Kinect:
-    def __init__(self, data):
-        self.disp_stamps = data["disp_stamps"]
-        self.rgb_stamps = data["rgb_stamps"]
+        o3d.visualization.draw_geometries([pcd])
+
+    else:
+        raise ValueError("Invalid point cloud shape. Must be (N, 3) or (N, 6).")
