@@ -93,25 +93,46 @@ def transform_points(points, T):
     """
     return np.dot(T[:3, :3], points.T).T + T[:3, 3]
 
-def view_point_cloud(pcl):
-    if pcl.shape[1] > 3:
-        # XYZRGB point cloud
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(pcl[:, :3])
+def view_point_clouds(pcl_list):
+    pcds = []  # List to hold point cloud objects
+    for pcl in pcl_list:
+        if pcl.shape[1] > 3:
+            # XYZRGB point cloud
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(pcl[:, :3])
 
-        if np.max(pcl[:, 3:]) > 1:
-            pcd.colors = o3d.utility.Vector3dVector(pcl[:, 3:] / 255.0)
+            if np.max(pcl[:, 3:]) > 1:
+                pcd.colors = o3d.utility.Vector3dVector(pcl[:, 3:] / 255.0)
+            else:
+                pcd.colors = o3d.utility.Vector3dVector(pcl[:, 3:])
+
+            pcds.append(pcd)
+
+        elif pcl.shape[1] == 3:
+            # XYZ point cloud
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(pcl)
+
+            pcds.append(pcd)
+
         else:
-            pcd.colors = o3d.utility.Vector3dVector(pcl[:, 3:])
+            raise ValueError("Invalid point cloud shape. Must be (N, 3) or (N, 6).")
 
-        o3d.visualization.draw_geometries([pcd])
+    o3d.visualization.draw_geometries(pcds)
 
-    elif pcl.shape[1] == 3:
-        # XYZ point cloud
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(pcl)
+def color_point_cloud(pcl, color):
+    """
+    Color a point cloud with a single color.
 
-        o3d.visualization.draw_geometries([pcd])
+    Args:
+        pcl: The point cloud to color, shape (N, 6)
+        color: The color to use, shape (3,)
 
-    else:
-        raise ValueError("Invalid point cloud shape. Must be (N, 3) or (N, 6).")
+    Returns:
+        The colored point cloud.
+    """
+    if pcl.shape[1] != 6:
+        raise ValueError("Invalid point cloud shape. Must be (N, 6).")
+
+    pcl[:, 3:] = color
+    return pcl
