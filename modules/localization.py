@@ -1,4 +1,6 @@
 import matplotlib.pyplot as plt
+from tqdm import tqdm
+import open3d as o3d
 import numpy as np
 
 WHEEL_DIAMETER = 0.254
@@ -53,6 +55,106 @@ def poses_from_odometry(v_ts, w_ts, x_0=[0., 0., 0.], dt=1./40.):
         x_next = odometry(x_curr, v_curr, w_curr, dt)
         x_ts.append(x_next)
     return np.array(x_ts)
+
+def icp(source, target, threshold=0.02, T_init=np.identity(4)):
+    """
+    Placeholder, just use Open3D's implementation (PointToPlane)
+    for now.
+    """
+    # The inputs source and target are 2D point clouds
+    # append a column of 0s to make them 3D, i.e: make their z=0
+
+    source = np.hstack((source, np.zeros((source.shape[0], 1))))
+    target = np.hstack((target, np.zeros((target.shape[0], 1))))
+
+    # Convert to Open3D point cloud
+    source = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(source))
+    target = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(target))
+
+    reg_p2l = o3d.pipelines.registration.registration_icp(
+        source, target, threshold, T_init,
+        o3d.pipelines.registration.TransformationEstimationPointToPoint()
+    )
+    return reg_p2l.transformation
+
+def poses_from_scan_matching(x_ts, z_ts):
+    poses = [[0, 0, 0]]
+    for i in tqdm(range(1, x_ts.shape[0])):
+        x_curr = x_ts[i-1]
+        x_next_odom = x_ts[i]
+
+        # Refine x_next_odom using ICP
+        T_init = dT_from_poses(x_curr, x_next_odom)
+
+        source = z_ts[i-1]
+        target = z_ts[i]
+
+        T_icp = icp(source, target, T_init=T_init)
+
+        x_next = np.dot(x_curr, T_icp[:3, :3].T) + T_icp[:3, 3]
+
+        poses.append(x_next)
+    return np.array(poses)
+
+def dT_from_poses(pose_t1, pose_t2):
+    """
+    Compute the relative transformation between two poses.
+
+    Args:
+        pose_t1: The first pose with shape (3,) as (x, y, theta)
+        pose_t2: The second pose with shape (3,) as (x, y, theta)
+
+    Returns:
+        dT: The 4x4 relative transformation matrix between the two poses.
+    """
+    pose_t1 = np.array(pose_t1)
+    pose_t2 = np.array(pose_t2)
+
+    # Calculate the rotation angle theta and the translation (tx, ty)
+    theta = pose_t2[2] - pose_t1[2]
+    cos_theta, sin_theta = np.cos(theta), np.sin(theta)
+
+    # Calculate translation
+    translation = pose_t2[:2] - pose_t1[:2]
+    rotation_matrix = np.array([[cos_theta, -sin_theta],
+                                [sin_theta, cos_theta]])
+
+    # Adjust translation based on the initial orientation of pose_t1
+    adjusted_translation = rotation_matrix @ translation
+
+    # Construct the 4x4 transformation matrix
+    dT = np.eye(4)
+    dT[:2, :2] = rotation_matrix
+    dT[:2, 3] = adjusted_translation
+    return dT
+
+
+
+# def dT_from_poses(pose_t1, pose_t2):
+#     """
+#     Compute the relative transformation between two poses.
+
+#     Args:
+#         pose_t1: The first pose with shape (3,)
+#         pose_t2: The second pose with shape (3,)
+
+#     Returns:
+#         The relative transformation between the two poses.
+#     """
+#     x1, y1, theta1 = pose_t1
+#     x2, y2, theta2 = pose_t2
+
+#     dx = x2 - x1
+#     dy = y2 - y1
+#     dtheta = theta2 - theta1
+
+#     dT = np.array([
+#         [np.cos(theta1), -np.sin(theta1), dx],
+#         [np.sin(theta1), np.cos(theta1), dy],
+#         [0, 0, dtheta]
+#     ])
+#     return dT
+
 
 def plot_trajectory(x_ts, increments=100, figsize=(10, 10)):
     """
