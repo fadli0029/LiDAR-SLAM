@@ -1,7 +1,116 @@
 from .utils import transform_points
+import matplotlib.pyplot as plt
+from tqdm import tqdm
 import open3d as o3d
 import numpy as np
 import cv2
+
+def generate_texture_map(
+    dataset_num,
+    x_ts,
+    kinect,
+    encoder,
+    ogm,
+    T_rc,
+    K
+):
+    """
+    Generate texture map
+
+    Args:
+        dataset_num: int, the dataset number
+        x_ts: np.ndarray, shape: (n, 3), the robot's poses
+        kinect: Kinect, the kinect sensor, sensors.Kinect
+        encoder: Encoder, the encoder sensor, sensors.Encoder
+        ogm: OccupancyGridMap, the occupancy grid map, ogm.OccupancyGridMap
+        T_rc: np.ndarray, shape: (4, 4), the transformation matrix from
+              camera frame to robot's body frame
+        K: np.ndarray, shape: (3, 3), the camera intrinsic matrix
+
+    Returns:
+        texture_map: np.ndarray, shape: (ogm.grid_map_width, ogm.grid_map_height, 3)
+    """
+    M = np.hstack((K, np.zeros((3, 1))))
+
+    # Match pose time stamps with rgb stamps
+    closest_pose_stamps_indices = kinect.get_closest_stamps(
+        faster_sensor_stamps = encoder.stamps,
+        slower_sensor_stamps = kinect.rgb_stamps
+    )
+
+    # Match disparity img stamps with rgb img stamps
+    closest_disp_stamps_indices = kinect.get_closest_stamps(
+        faster_sensor_stamps = kinect.disp_stamps,
+        slower_sensor_stamps = kinect.rgb_stamps
+    )
+
+    # texture map, shape: (ogm.grid_map_width, ogm.grid_map_height, 3)
+    texture_map = ogm.grid_map
+    texture_map = np.repeat(np.expand_dims(texture_map, axis=2), 3, axis=2)
+    print("Generating texture map...")
+    for rgb_idx in tqdm(range(kinect.rgb_stamps.shape[0])):
+        x_t = x_ts[closest_pose_stamps_indices[rgb_idx]]
+        disp_img_idx = closest_disp_stamps_indices[rgb_idx]
+
+        # Load the images
+        disparity_PATH = "dataRGBD/Disparity" + str(dataset_num) + "/" +\
+                         "disparity" + str(dataset_num) + "_" +\
+                         str(disp_img_idx) + ".png"
+        rgb_PATH      = "dataRGBD/RGB" + str(dataset_num) + "/" +\
+                        "rgb" +str(dataset_num) + "_" +\
+                        str(rgb_idx+1) + ".png"
+        disparity_image = read_image(disparity_PATH, is_disparity=True)
+        depth_image = get_depth_image(disparity_image)
+        rgb_image = read_image(rgb_PATH)
+
+        # Generate point cloud (in camera frame)
+        pcl = vectorized_generate_point_cloud(depth_image, rgb_image, M)
+
+        # Transform the point cloud to robot frame
+        pcl_r = transform_point_cloud(pcl, T_rc)
+
+        # Transform the point cloud to world frame using robot's pose
+        x, y, yaw = x_t
+        p_wr = np.array([x, y, 0])
+        R_wr = np.array([
+            [np.cos(yaw), -np.sin(yaw), 0],
+            [np.sin(yaw),  np.cos(yaw), 0],
+            [          0,            0, 1]
+        ])
+        T_wr = np.eye(4)
+        T_wr[:3, :3]  = R_wr
+        T_wr[:3,  3]  = p_wr
+        pcl_w = transform_point_cloud(pcl_r, T_wr)
+
+        # Segment the floor points
+        floor_points = pcl_w[:, [0, 1, 3, 4, 5]]
+
+        # Get the grid coordinates of the floor points
+        floor_grid = ogm.world2grid(floor_points[:, 0], floor_points[:, 1])
+
+        # "Paint" the texture map
+        valid_indices = (floor_grid[:, 0] >= 0) & (floor_grid[:, 0] < ogm.grid_map_width) & \
+                        (floor_grid[:, 1] >= 0) & (floor_grid[:, 1] < ogm.grid_map_height)
+
+        valid_floor_grid = floor_grid[valid_indices]
+        valid_floor_colors = floor_points[valid_indices, 2:]
+
+        texture_map[valid_floor_grid[:, 0], valid_floor_grid[:, 1], :] = valid_floor_colors
+
+    texture_map = texture_map.astype(np.float32) / 255.0
+    return texture_map
+
+def plot_texture_map(texture_map, figsize=(10, 10)):
+    """
+    Plot the texture map
+
+    Args:
+        texture_map: np.ndarray, shape: (ogm.grid_map_width, ogm.grid_map_height, 3)
+    """
+    plt.figure(figsize=figsize)
+    plt.imshow(texture_map)
+    plt.axis("off")
+    plt.show()
 
 def read_image(path, is_disparity=False):
     if not is_disparity:

@@ -100,15 +100,15 @@ class OccupancyGridMap:
 
     def world2grid(self, x, y):
         """
-        Convert a point in the world frame to the grid frame.
+        Convert a point in the world frame to the grid map.
 
         Args:
             x: The x-coordinate of the point in the world frame
             y: The y-coordinate of the point in the world frame
 
         Returns:
-            x_g: The x-coordinate of the point in the grid frame
-            y_g: The y-coordinate of the point in the grid frame
+            i: The i-coordinate of the point in the grid map
+            j: The j-coordinate of the point in the grid map
         """
 
         # If x and y are (N, ) arrays.
@@ -118,9 +118,32 @@ class OccupancyGridMap:
             return np.hstack((x_g.reshape(-1, 1), y_g.reshape(-1, 1)))
 
         # If x and y are single values.
-        x_g = int(np.ceil((x-self.world_map_min_x)/self.res)) - 1
-        y_g = int(np.ceil((y-self.world_map_min_y)/self.res)) - 1
-        return np.array([x_g, y_g], dtype=np.int32)
+        i = int(np.ceil((x-self.world_map_min_x)/self.res)) - 1
+        j = int(np.ceil((y-self.world_map_min_y)/self.res)) - 1
+        return np.array([i, j], dtype=np.int32)
+
+    def grid2world(self, i, j):
+        """
+        Convert a point in the grid map frame to the grid frame.
+
+        Args:
+            i: The i-coordinate of the point in the grid map
+            j: The j-coordinate of the point in the grid map
+
+        Returns:
+            x: The x-coordinate of the point in the world frame
+            y: The y-coordinate of the point in the world frame
+        """
+        # If i and j are (N, ) arrays.
+        if isinstance(i, np.ndarray) and isinstance(j, np.ndarray):
+            x = i*self.res + self.world_map_min_x
+            y = j*self.res + self.world_map_min_y
+            return np.hstack((x.reshape(-1, 1), y.reshape(-1, 1)))
+
+        # If i and j are single values.
+        x = i*self.res + self.world_map_min_x
+        y = j*self.res + self.world_map_min_y
+        return np.array([x, y])
 
     def update_map(self, x_t, z_t):
         """
