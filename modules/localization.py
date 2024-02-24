@@ -9,9 +9,10 @@ DIST_PER_TICK = 0.0022
 FREQ = 40
 DELTA_T = 1 / FREQ
 
-def odometry(x_t, v_t, w_t, dt):
+def diff_drive_motion_model(pose_t, v_t, w_t, dt):
     """
-    Compute the odometry of the robot.
+    Compute the next pose of the robot using the differential drive
+    motion model.
 
     Args:
         x_t: The state of the robot with shape (3,)
@@ -20,18 +21,18 @@ def odometry(x_t, v_t, w_t, dt):
         dt:  The time step.
 
     Returns:
-        The odometry (pose) of the robot at t+1.
+        The next pose of the robot with shape (3,)
     """
     dtheta = w_t[-1]*dt
 
-    x, y, theta = x_t
+    x, y, theta = pose_t
     x += v_t*dt*(np.sin(dtheta/2)/(dtheta/2))*np.cos(theta + dtheta/2)
     y += v_t*dt*(np.sin(dtheta/2)/(dtheta/2))*np.sin(theta + dtheta/2)
     theta += dtheta
 
     return [x, y, theta]
 
-def poses_from_odometry(v_ts, w_ts, x_0=[0., 0., 0.], dt=1./40.):
+def poses_from_odometry(v_ts, w_ts, x_0=[0., 0., 0.], dt=1./40., return_relative_poses=False):
     """
     Compute the poses of the robot for its entire trajectory from
     odometry (pose estimates) measurements generated from the
@@ -42,19 +43,29 @@ def poses_from_odometry(v_ts, w_ts, x_0=[0., 0., 0.], dt=1./40.):
         w_ts:    The gyro data with shape (N, 3)
         x_0:     The initial pose of the robot.
         dt:      The time step.
+        return_relative_poses: Whether to return the relative poses
 
     Returns:
-        The poses x_ts of the robot for its entire trajectory,
-        with shape (N, 3).
+        The poses of the robot for its entire trajectory,
+        with shape (N, 3). Optionally, the relative poses of the
+        robot for its entire trajectory, with shape (N, 4, 4).
     """
-    x_ts = [x_0]
+    poses = [x_0]
+    relative_poses = []
     for i in range(1, v_ts.shape[0]):
         v_curr = v_from_encoder(v_ts[i])
         w_curr = w_ts[i]
-        x_curr = x_ts[-1]
-        x_next = odometry(x_curr, v_curr, w_curr, dt)
-        x_ts.append(x_next)
-    return np.array(x_ts)
+
+        pose_curr = poses[-1]
+        pose_next = diff_drive_motion_model(pose_curr, v_curr, w_curr, dt)
+        poses.append(pose_next)
+
+        relative_pose = get_relative_pose(pose_curr, pose_next)
+        relative_poses.append(relative_pose)
+
+    if return_relative_poses:
+        return np.array(poses), np.array(relative_poses)
+    return np.array(poses)
 
 def icp(source, target, threshold=0.02, T_init=np.identity(4)):
     """
@@ -77,24 +88,74 @@ def icp(source, target, threshold=0.02, T_init=np.identity(4)):
     )
     return reg_p2l.transformation
 
-def poses_from_scan_matching(x_ts, z_ts):
+def poses_from_scan_matching(x_ts, z_ts, return_relative_poses=False):
+    """
+    Compute the poses of the robot for its entire trajectory by
+    refining the odometry estimates using scan matching (i.e:
+    using obsrvations from the LIDAR sensor).
+
+    Args:
+        x_ts: The robot trajectory from odometry with shape (N, 3).
+        z_ts: The LIDAR observations, a list where each element i
+              is of shape (ni, 2) containing the (x, y) coordinates of the
+              lidar data (in the ith scan) in the robot frame.
+
+    Returns:
+        The refined poses x_ts of the robot for its entire trajectory,
+        with shape (N, 3).
+    """
     poses = [[0, 0, 0]]
+    relative_poses = []
     for i in tqdm(range(1, x_ts.shape[0])):
-        x_curr = x_ts[i-1]
-        x_next_odom = x_ts[i]
+        pose_curr = x_ts[i-1]
+        pose_next_odom = x_ts[i]
+        T_init = get_relative_pose(pose_curr, pose_next_odom)
 
-        # Refine x_next_odom using ICP
-        T_init = dT_from_poses(x_curr, x_next_odom)
+        T_icp = icp(z_ts[i], z_ts[i-1], T_init=T_init)
+        relative_poses.append(T_icp)
 
-        source = z_ts[i-1]
-        target = z_ts[i]
+        pose_next_refined = np.dot(pose_curr, T_icp[:3, :3].T) + T_icp[:3, 3]
+        poses.append(pose_next_refined)
 
-        T_icp = icp(source, target, T_init=T_init)
-
-        x_next = np.dot(x_curr, T_icp[:3, :3].T) + T_icp[:3, 3]
-
-        poses.append(x_next)
+    if return_relative_poses:
+        return np.array(poses), np.array(relative_poses)
     return np.array(poses)
+
+def T_from_pose(pose):
+    """
+    Compute the transformation matrix from a pose.
+
+    Args:
+        pose: The pose with shape (3,) as (x, y, theta).
+
+    Returns:
+        T: The 4x4 transformation matrix.
+    """
+    x, y, theta = pose
+    T = np.array([
+        [np.cos(theta), -np.sin(theta), 0, x],
+        [np.sin(theta), np.cos(theta), 0, y],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1]
+    ])
+    return T
+
+def get_relative_pose(pose_t1, pose_t2):
+    """
+    Compute the relative transformation between from pose_t2 to pose_t1.
+
+    Args:
+        pose_t1: The first pose with shape (3,) as (x, y, theta)
+        pose_t2: The second pose with shape (3,) as (x, y, theta)
+
+    Returns:
+        T_relative: The 4x4 relative transformation matrix from pose_t2 to pose_t1.
+    """
+    T1 = T_from_pose(pose_t1)
+    T2 = T_from_pose(pose_t2)
+
+    T_relative = np.dot(np.linalg.inv(T1), T2)
+    return T_relative
 
 def dT_from_poses(pose_t1, pose_t2):
     """
@@ -126,72 +187,8 @@ def dT_from_poses(pose_t1, pose_t2):
     dT = np.eye(4)
     dT[:2, :2] = rotation_matrix
     dT[:2, 3] = adjusted_translation
+
     return dT
-
-
-
-# def dT_from_poses(pose_t1, pose_t2):
-#     """
-#     Compute the relative transformation between two poses.
-
-#     Args:
-#         pose_t1: The first pose with shape (3,)
-#         pose_t2: The second pose with shape (3,)
-
-#     Returns:
-#         The relative transformation between the two poses.
-#     """
-#     x1, y1, theta1 = pose_t1
-#     x2, y2, theta2 = pose_t2
-
-#     dx = x2 - x1
-#     dy = y2 - y1
-#     dtheta = theta2 - theta1
-
-#     dT = np.array([
-#         [np.cos(theta1), -np.sin(theta1), dx],
-#         [np.sin(theta1), np.cos(theta1), dy],
-#         [0, 0, dtheta]
-#     ])
-#     return dT
-
-
-def plot_trajectory(x_ts, increments=100, figsize=(10, 10)):
-    """
-    Plot the trajectory of the robot.
-
-    Args:
-        x_ts: The poses of the robot with shape (N, 3).
-        increments: The number of points to skip when
-                    plotting the orientation of the robot.
-        figsize: The size of the figure.
-    """
-    x = x_ts[:, 0]
-    y = x_ts[:, 1]
-    yaw = x_ts[:, 2]
-
-    # Plot the trajectory
-    plt.figure(figsize=figsize)
-    plt.plot(x, y, label='Trajectory', color='blue')
-
-    # Mark the start (black) and end (green) points
-    plt.plot(x[0], y[0], marker='s', color='black', label='Start')
-    plt.plot(x[-1], y[-1], marker='s', color='green', label='End')
-
-    # Plot the orientation of the robot
-    for i in range(0, len(x), increments):
-        dx = np.cos(yaw[i]) * 0.5 # to control arrow length
-        dy = np.sin(yaw[i]) * 0.5 # to control arrow length
-
-        plt.quiver(x[i], y[i], dx, dy, color='red', scale=10,
-                   width=0.005, headwidth=2, headlength=5)
-
-    plt.xlabel('x (m)')
-    plt.ylabel('y (m)')
-    plt.title('Robot Trajectory and Orientation')
-    plt.legend()
-    plt.axis('equal')
-    plt.show()
 
 def v_from_encoder(counts):
     """
@@ -256,10 +253,139 @@ def get_lidar_data(lidar_ranges, lidar_range_min, lidar_range_max):
         R_rl = np.identity(3)
 
         z = np.zeros_like(x_coordinates)
-        x_y_z = np.column_stack((x_coordinates, y_coordinates, z))  # shape (valid_n, 3)
+        x_y_z = np.column_stack((x_coordinates, y_coordinates, z))
         x_y_z = np.dot(x_y_z, R_rl.T) + p_rl
 
         # Append processed scan (x, y coordinates only)
         processed_scans.append(x_y_z[:, :2])
 
     return processed_scans
+
+def plot_trajectory(x_ts, increments=100, figsize=(10, 10)):
+    """
+    Plot the trajectory of the robot.
+
+    Args:
+        x_ts: The poses of the robot with shape (N, 3).
+        increments: The number of points to skip when
+                    plotting the orientation of the robot.
+        figsize: The size of the figure.
+    """
+    x = x_ts[:, 0]
+    y = x_ts[:, 1]
+    yaw = x_ts[:, 2]
+
+    # Plot the trajectory
+    plt.figure(figsize=figsize)
+    plt.plot(x, y, label='Trajectory', color='blue')
+
+    # Mark the start (black) and end (green) points
+    plt.plot(x[0], y[0], marker='s', color='black', label='Start')
+    plt.plot(x[-1], y[-1], marker='s', color='green', label='End')
+
+    # Plot the orientation of the robot
+    for i in range(0, len(x), increments):
+        dx = np.cos(yaw[i]) * 0.5 # to control arrow length
+        dy = np.sin(yaw[i]) * 0.5 # to control arrow length
+
+        plt.quiver(x[i], y[i], dx, dy, color='red', scale=10,
+                   width=0.005, headwidth=2, headlength=5)
+
+    plt.xlabel('x (m)')
+    plt.ylabel('y (m)')
+    plt.title('Robot Trajectory and Orientation')
+    plt.legend()
+    plt.axis('equal')
+    plt.show()
+
+def plot_trajectories(x1_ts, x2_ts, increments=100, figsize=(10, 10)):
+    """
+    Plot the trajectories of x1_ts and x2_ts.
+
+    Args:
+        x1_ts: The poses of the first robot with shape (N, 3).
+        x2_ts: The poses of the second robot with shape (N, 3).
+        increments: The number of points to skip when
+                    plotting the orientation of the robot.
+        figsize: The size of the figure.
+    """
+    x1 = x1_ts[:, 0]
+    y1 = x1_ts[:, 1]
+    yaw1 = x1_ts[:, 2]
+
+    x2 = x2_ts[:, 0]
+    y2 = x2_ts[:, 1]
+    yaw2 = x2_ts[:, 2]
+
+    # Plot the trajectory
+    plt.figure(figsize=figsize)
+    plt.plot(x1, y1, label='odometry', color='blue')
+    plt.plot(x2, y2, label='scan matching', color='red')
+
+    # Mark the start (black) and end (green) points
+    plt.plot(x1[0], y1[0], marker='s', color='purple', label='Start')
+    plt.plot(x1[-1], y1[-1], marker='s', color='brown', label='End')
+
+    # Plot the orientation of the robot
+    for i in range(0, len(x1), increments):
+        # Use constrasting arrow color (since background is white)
+        # but don't use red or blue since those are the trajectory colors
+        c1 = 'green'
+        c2 = 'black'
+
+        dx1 = 0.5 * np.cos(yaw1[i])
+        dy1 = 0.5 * np.sin(yaw1[i])
+        plt.quiver(x1[i], y1[i], dx1, dy1, color=c1, scale=10,
+                   width=0.005, headwidth=2, headlength=5)
+
+        dx2 = 0.5 * np.cos(yaw2[i])
+        dy2 = 0.5 * np.sin(yaw2[i])
+        plt.quiver(x2[i], y2[i], dx2, dy2, color=c2, scale=10,
+                   width=0.005, headwidth=2, headlength=5)
+
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    plt.title('Robot Trajectory and Orientation')
+    plt.legend()
+    plt.show()
+
+def plot_N_trajectories(poses, increments=100, figsize=(10, 10)):
+    """
+    Plot the trajectories for a list of poses.
+
+    Args:
+        poses: A list of pose arrays, each with shape (N, 3), where N is the number of poses for each robot.
+        increments: The number of points to skip when plotting the orientation of the robot.
+        figsize: The size of the figure.
+    """
+    plt.figure(figsize=figsize)
+    colors = ['blue', 'red', 'green', 'purple', 'orange', 'brown', 'pink', 'gray', 'cyan', 'magenta']
+    arrow_colors = ['black', 'darkgreen', 'navy', 'chocolate', 'darkviolet', 'gold', 'lime', 'indigo', 'teal', 'crimson']
+
+    for idx, x_ts in enumerate(poses):
+        x = x_ts[:, 0]
+        y = x_ts[:, 1]
+        yaw = x_ts[:, 2]
+
+        # Ensure we have enough colors, cycle if necessary
+        plot_color = colors[idx % len(colors)]
+        arrow_color = arrow_colors[idx % len(arrow_colors)]
+
+        # Plot the trajectory
+        plt.plot(x, y, label=f'Robot {idx+1}', color=plot_color)
+
+        # Mark the start (marker 'o') and end (marker 's') points
+        plt.plot(x[0], y[0], marker='o', color=plot_color)
+        plt.plot(x[-1], y[-1], marker='s', color=plot_color)
+
+        # Plot the orientation of the robot
+        for i in range(0, len(x), increments):
+            dx = 0.5 * np.cos(yaw[i])
+            dy = 0.5 * np.sin(yaw[i])
+            plt.quiver(x[i], y[i], dx, dy, color=arrow_color, scale=10, width=0.005, headwidth=2, headlength=5)
+
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    plt.title('Robot Trajectories and Orientations')
+    plt.legend()
+    plt.show()

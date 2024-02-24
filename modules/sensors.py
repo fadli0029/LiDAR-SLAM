@@ -9,7 +9,7 @@ class Sensor(ABC):
         """
         Find the nearest timestamp in an array to a given value.
         """
-        array = np.asarray(array)
+        array = np.asarray(array, dtype=np.float64)
         idx = (np.abs(array - value)).argmin()
         return idx
 

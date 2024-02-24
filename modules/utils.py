@@ -1,6 +1,14 @@
 import open3d as o3d
 import numpy as np
 
+def save_numpy(array, filename):
+    with open(filename, "wb") as f:
+        np.save(f, array)
+
+def load_numpy(filename):
+    with open(filename, "rb") as f:
+        return np.load(f)
+
 def load_data(dataset_num, dataset_names):
     with np.load("data/%s%d.npz"%(dataset_names["encoder"], dataset_num)) as data:
         encoder_counts = data["counts"].T
