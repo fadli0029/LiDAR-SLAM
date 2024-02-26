@@ -12,7 +12,8 @@ def generate_texture_map(
     encoder,
     ogm,
     T_rc,
-    K
+    K,
+    return_point_clouds=False
 ):
     """
     Generate texture map
@@ -26,6 +27,7 @@ def generate_texture_map(
         T_rc: np.ndarray, shape: (4, 4), the transformation matrix from
               camera frame to robot's body frame
         K: np.ndarray, shape: (3, 3), the camera intrinsic matrix
+        return_point_cloud: If True, return the point cloud in world frame
 
     Returns:
         texture_map: np.ndarray, shape: (ogm.grid_map_width, ogm.grid_map_height, 3)
@@ -47,6 +49,7 @@ def generate_texture_map(
     # texture map, shape: (ogm.grid_map_width, ogm.grid_map_height, 3)
     texture_map = ogm.grid_map
     texture_map = np.repeat(np.expand_dims(texture_map, axis=2), 3, axis=2)
+    trajectory_pcd = o3d.geometry.PointCloud()
     print("Generating texture map...")
     for rgb_idx in tqdm(range(kinect.rgb_stamps.shape[0])):
         x_t = x_ts[closest_pose_stamps_indices[rgb_idx]]
@@ -81,6 +84,8 @@ def generate_texture_map(
         T_wr[:3, :3]  = R_wr
         T_wr[:3,  3]  = p_wr
         pcl_w = transform_point_cloud(pcl_r, T_wr)
+        if return_point_clouds:
+            trajectory_pcd += create_open3d_point_cloud(pcl_w)
 
         # Segment the floor points
         floor_points = pcl_w[:, [0, 1, 3, 4, 5]]
@@ -98,7 +103,19 @@ def generate_texture_map(
         texture_map[valid_floor_grid[:, 0], valid_floor_grid[:, 1], :] = valid_floor_colors
 
     texture_map = texture_map.astype(np.float32) / 255.0
+    if return_point_clouds:
+        return texture_map, trajectory_pcd
     return texture_map
+
+def create_open3d_point_cloud(point_cloud_np):
+    point_cloud_np[:, 3:] = point_cloud_np[:, 3:] / 255.0
+
+    # Create Open3D point cloud
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(point_cloud_np[:, :3])
+    pcd.colors = o3d.utility.Vector3dVector(point_cloud_np[:, 3:])
+
+    return pcd
 
 def plot_texture_map(texture_map, figsize=(10, 10)):
     """

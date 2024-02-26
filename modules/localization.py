@@ -157,40 +157,66 @@ def get_relative_pose(pose_t1, pose_t2):
     T_relative = np.dot(np.linalg.inv(T1), T2)
     return T_relative
 
-def dT_from_poses(pose_t1, pose_t2):
-    """
-    Compute the relative transformation between two poses.
+# def dT_from_poses(pose_t1, pose_t2):
+#     """
+#     Compute the relative transformation between two poses.
 
-    Args:
-        pose_t1: The first pose with shape (3,) as (x, y, theta)
-        pose_t2: The second pose with shape (3,) as (x, y, theta)
+#     Args:
+#         pose_t1: The first pose with shape (3,) as (x, y, theta)
+#         pose_t2: The second pose with shape (3,) as (x, y, theta)
 
-    Returns:
-        dT: The 4x4 relative transformation matrix between the two poses.
-    """
-    pose_t1 = np.array(pose_t1)
-    pose_t2 = np.array(pose_t2)
+#     Returns:
+#         dT: The 4x4 relative transformation matrix between the two poses.
+#     """
+#     pose_t1 = np.array(pose_t1)
+#     pose_t2 = np.array(pose_t2)
 
-    # Calculate the rotation angle theta and the translation (tx, ty)
-    theta = pose_t2[2] - pose_t1[2]
-    cos_theta, sin_theta = np.cos(theta), np.sin(theta)
+#     # Calculate the rotation angle theta and the translation (tx, ty)
+#     theta = pose_t2[2] - pose_t1[2]
+#     cos_theta, sin_theta = np.cos(theta), np.sin(theta)
 
-    # Calculate translation
-    translation = pose_t2[:2] - pose_t1[:2]
-    rotation_matrix = np.array([[cos_theta, -sin_theta],
-                                [sin_theta, cos_theta]])
+#     # Calculate translation
+#     translation = pose_t2[:2] - pose_t1[:2]
+#     rotation_matrix = np.array([[cos_theta, -sin_theta],
+#                                 [sin_theta, cos_theta]])
 
-    # Adjust translation based on the initial orientation of pose_t1
-    adjusted_translation = rotation_matrix @ translation
+#     # Adjust translation based on the initial orientation of pose_t1
+#     adjusted_translation = rotation_matrix @ translation
 
-    # Construct the 4x4 transformation matrix
-    dT = np.eye(4)
-    dT[:2, :2] = rotation_matrix
-    dT[:2, 3] = adjusted_translation
+#     # Construct the 4x4 transformation matrix
+#     dT = np.eye(4)
+#     dT[:2, :2] = rotation_matrix
+#     dT[:2, 3] = adjusted_translation
 
-    return dT
+#     return dT
 
 def v_from_encoder(counts):
+    """
+    Compute the velocity of the robot from the encoder counts.
+
+    Args:
+        counts: The encoder counts (4, ), [FR, FL, RR, RL]
+
+    Returns:
+        The velocity of the robot.
+    """
+    # Constants
+    distance_per_tick = 0.0022  # meters per tic
+    encoder_frequency = 40  # Hz
+
+    # Calculate the average distance traveled by the right and left wheels
+    distance_right = (counts[0] + counts[2]) / 2 * distance_per_tick
+    distance_left = (counts[1] + counts[3]) / 2 * distance_per_tick
+
+    # Calculate the average distance traveled by all wheels
+    distance_average = (distance_right + distance_left) / 2
+
+    # Compute the velocity (distance per time)
+    velocity = distance_average * encoder_frequency  # meters per second
+
+    return velocity
+
+def v_from_encoder_old(counts):
     """
     Compute the velocity of the robot from the encoder counts.
 
@@ -349,7 +375,7 @@ def plot_trajectories(x1_ts, x2_ts, increments=100, figsize=(10, 10)):
     plt.legend()
     plt.show()
 
-def plot_N_trajectories(poses, increments=100, figsize=(10, 10)):
+def plot_N_trajectories(poses, labels=None, increments=100, figsize=(10, 10)):
     """
     Plot the trajectories for a list of poses.
 
@@ -372,7 +398,10 @@ def plot_N_trajectories(poses, increments=100, figsize=(10, 10)):
         arrow_color = arrow_colors[idx % len(arrow_colors)]
 
         # Plot the trajectory
-        plt.plot(x, y, label=f'Robot {idx+1}', color=plot_color)
+        if labels is None:
+            plt.plot(x, y, label=f'Robot {idx+1}', color=plot_color)
+        else:
+            plt.plot(x, y, label=labels[idx], color=plot_color)
 
         # Mark the start (marker 'o') and end (marker 's') points
         plt.plot(x[0], y[0], marker='o', color=plot_color)

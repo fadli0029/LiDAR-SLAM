@@ -66,41 +66,7 @@ def robot_poses_from_poses(poses):
         robot_poses.append(gtsam.Pose2(poses[i, 0], poses[i, 1], poses[i, 2]))
     return robot_poses
 
-def icp_constraints_from_relative_poses(relative_poses, lidar_scans, loop_closure_interval=10):
-    """
-    Create ICP constraints from relative poses and add loop closure constraints.
-
-    Args:
-        relative_poses: list of relative poses (N, 4, 4)
-        lidar_scans: list of lidar scans used for loop closure
-        loop_closure_interval: interval at which loop closure is added
-
-    Returns:
-        list of ICP constraints (i, j, transform)
-    """
-    icp_constraints = []
-    for i in range(len(relative_poses)):
-        p = relative_poses[i][:2, 3]
-        R = relative_poses[i][:2, :2]
-        theta = np.arctan2(R[1, 0], R[0, 0])
-        icp_constraints.append((i, i+1, gtsam.Pose2(p[0], p[1], theta)))
-
-        # Add loop closure constraint every 'loop_closure_interval' poses
-        if (i + 1) % loop_closure_interval == 0 and i > 0:
-            source_scan = scan_to_point_cloud(get_lidar_scan_from_pose_index(i + 1 - loop_closure_interval, lidar_scans))
-            target_scan = scan_to_point_cloud(get_lidar_scan_from_pose_index(i + 1, lidar_scans))
-            transform = perform_icp(source_scan, target_scan)
-            if transform is not None:
-                p_loop = transform[:2, 3]
-                R_loop = transform[:2, :2]
-                theta_loop = np.arctan2(R_loop[1, 0], R_loop[0, 0])
-                loop_closure_transform = gtsam.Pose2(p_loop[0], p_loop[1], theta_loop)
-                icp_constraints.append((i + 1 - loop_closure_interval, i + 1, loop_closure_transform))
-
-    return icp_constraints
-
-
-def icp_constraints_from_relative_poses_old(relative_poses):
+def icp_constraints_from_relative_poses(relative_poses):
     """
     Create ICP constraints from relative poses.
 
@@ -146,53 +112,49 @@ def get_lidar_scan_from_pose_index(pose_index, lidar_scans):
     """
     return lidar_scans[pose_index]
 
-def perform_icp(source_cloud, target_cloud, threshold_fitness=0.5, threshold_translation=2.0, threshold_rotation=np.pi/4):
+def verify_loop_closure_candidates(loop_closure_candidates, lidar_scans, threshold=1.0):
+    verified_loop_closures = []
+
+    # wrap with tqdm to show a progress bar
+    for i, j in tqdm(loop_closure_candidates):
+        # Convert LiDAR scans to point clouds
+        cloud_i = scan_to_point_cloud(get_lidar_scan_from_pose_index(i, lidar_scans))
+        cloud_j = scan_to_point_cloud(get_lidar_scan_from_pose_index(j, lidar_scans))
+
+        # Apply ICP to align the two point clouds
+        icp_result = o3d.pipelines.registration.registration_icp(
+            cloud_i, cloud_j, threshold, np.eye(4),
+            o3d.pipelines.registration.TransformationEstimationPointToPoint(),
+            o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=200)
+        )
+
+        # Check the fitness score of the ICP result to decide if it's a valid loop closure
+        if icp_result.fitness > 0.3:  # Fitness threshold can be adjusted
+            transformation = icp_result.transformation
+            p = transformation[:2, 3]
+            R = transformation[:2, :2]
+            theta = np.arctan2(R[1, 0], R[0, 0])
+            verified_loop_closures.append((i, j, gtsam.Pose2(p[0], p[1], theta)))
+
+    return verified_loop_closures
+
+def pose_graph_optimization(poses, relative_poses):
     """
-    Perform ICP scan matching between two point clouds and check if it is physically plausible.
-
-    Args:
-        source_cloud: Source point cloud as an open3d point cloud object.
-        target_cloud: Target point cloud as an open3d point cloud object.
-        threshold_fitness: Minimum fitness score to consider the match plausible.
-        threshold_translation: Maximum translation to consider the match plausible.
-        threshold_rotation: Maximum rotation (in radians) to consider the match plausible.
-
-    Returns:
-        The transformation matrix estimated by ICP if plausible, otherwise None.
-    """
-    icp_result = o3d.pipelines.registration.registration_icp(
-        source_cloud, target_cloud, max_correspondence_distance=2,
-        init=np.eye(4), estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint()
-    )
-
-    is_plausible = (icp_result.fitness > threshold_fitness and
-                    np.linalg.norm(icp_result.transformation[:3, 3]) < threshold_translation and
-                    np.arccos((np.trace(icp_result.transformation[:3, :3]) - 1) / 2) < threshold_rotation)
-
-    return icp_result.transformation if is_plausible else None
-
-def pose_graph_optimization(poses, relative_poses, lidar_scans, loop_closure_interval=10):
-    """
-    Pose graph optimization with fixed-interval loop closure.
+    Pose graph optimization.
 
     Args:
         poses: numpy array of robot poses, (N, 3)
         relative_poses: list of relative poses (N-1, 4, 4)
-        lidar_scans: list of lidar scans for loop closure
-        loop_closure_interval: interval at which loop closure is added
 
     Returns:
         optimized robot poses (N, 3)
     """
     robot_poses = robot_poses_from_poses(poses)
-    # Include the lidar_scans and loop_closure_interval in the constraints
-    icp_constraints = icp_constraints_from_relative_poses(relative_poses, lidar_scans, loop_closure_interval)
+    icp_constraints = icp_constraints_from_relative_poses(relative_poses)
     graph = create_factor_graph(robot_poses, icp_constraints)
     initial_poses = gtsam.Values()
     for i in range(len(robot_poses)):
         initial_poses.insert(X(i), robot_poses[i])
     optimized_values = optimize_poses(graph, initial_poses)
     optimized_poses = get_optimized_poses(optimized_values, len(robot_poses))
-
-    # Convert the gtsam.Pose2 objects to a numpy array
     return np.array([[pose.x(), pose.y(), pose.theta()] for pose in optimized_poses])
