@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from .icp2 import run_icp
+from .icp import run_icp
 # import open3d as o3d
 import numpy as np
 
