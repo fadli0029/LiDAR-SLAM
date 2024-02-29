@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-import open3d as o3d
+from .icp2 import run_icp
+# import open3d as o3d
 import numpy as np
 
 from .utils import *
@@ -116,8 +117,9 @@ def poses_from_scan_matching(x_ts, z_ts, return_relative_poses=False):
         pose_next_odom = x_ts[i]
         T_init = get_relative_pose(pose_curr, pose_next_odom)
 
-        T_icp = icp(z_ts[i], z_ts[i-1], T_init=T_init)
-        T_icp = TSE2_from_TSE3(T_icp)
+        # T_icp = icp(z_ts[i], z_ts[i-1], T_init=T_init)
+        T_icp = run_icp(z_ts[i], z_ts[i-1], init_transform=T_init)
+        # T_icp = TSE2_from_TSE3(T_icp)
         relative_poses.append(T_icp)
 
         T_next = poses_from_icp[-1] @ T_icp
