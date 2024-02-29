@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from .icp import run_icp
-# import open3d as o3d
 import numpy as np
 
 from .utils import *
@@ -117,9 +116,8 @@ def poses_from_scan_matching(x_ts, z_ts, return_relative_poses=False):
         pose_next_odom = x_ts[i]
         T_init = get_relative_pose(pose_curr, pose_next_odom)
 
-        # T_icp = icp(z_ts[i], z_ts[i-1], T_init=T_init)
-        T_icp = run_icp(z_ts[i], z_ts[i-1], init_transform=T_init)
-        # T_icp = TSE2_from_TSE3(T_icp)
+        T_icp = run_icp(z_ts[i], z_ts[i-1], init_transform=TSE3_from_TSE2(T_init))
+        T_icp = TSE2_from_TSE3(T_icp)
         relative_poses.append(T_icp)
 
         T_next = poses_from_icp[-1] @ T_icp
@@ -130,29 +128,6 @@ def poses_from_scan_matching(x_ts, z_ts, return_relative_poses=False):
     if return_relative_poses:
         return np.array(poses), np.array(relative_poses)
     return np.array(poses)
-
-def icp(source, target, threshold=1., T_init=None):
-    """
-    Placeholder, just use Open3D's implementation (PointToPlane)
-    for now.
-    """
-    if T_init is None:
-        T_init = np.eye(4)
-    else:
-        T_init = TSE3_from_TSE2(T_init)
-
-    source = np.hstack((source, np.zeros((source.shape[0], 1))))
-    target = np.hstack((target, np.zeros((target.shape[0], 1))))
-
-    # Convert to Open3D point cloud
-    source = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(source))
-    target = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(target))
-
-    reg_p2l = o3d.pipelines.registration.registration_icp(
-        source, target, threshold, T_init,
-        o3d.pipelines.registration.TransformationEstimationPointToPoint()
-    )
-    return reg_p2l.transformation
 
 def v_from_encoder(counts):
     """
