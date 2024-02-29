@@ -53,7 +53,6 @@ class OccupancyGridMap:
         Returns:
             None
         """
-        print("Building the map...")
         for i in tqdm(range(len(states))):
             x_t = states[i]
             z_t = meas[i]
@@ -74,7 +73,7 @@ class OccupancyGridMap:
         Returns:
             None
         """
-        # First, normalize the log odds to be between 0 and 1.
+        # Normalize the log odds to be between 0 and 1.
         numerator = self.grid_map_log_odds - np.min(self.grid_map_log_odds)
         denominator = np.max(self.grid_map_log_odds) - np.min(self.grid_map_log_odds)
         normalized_log_odds = numerator / denominator
@@ -176,11 +175,10 @@ class OccupancyGridMap:
                 np.logical_and(points[:, 1] >= 0, points[:, 1] < self.grid_map_height)
             )
 
+            # Update the log odds
             points = points[valid_points]
             if points.shape[0] == 0:
                 continue
-
-            # Update the log odds
             self.grid_map_log_odds[points[:-1, 0], points[:-1, 1]] -= self.logodds_ratio
             self.grid_map_log_odds[points[-1, 0], points[-1, 1]] += self.logodds_ratio
 
