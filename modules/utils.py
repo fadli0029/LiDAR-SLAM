@@ -147,19 +147,37 @@ def transform_points(points, T):
 
     Args:
         points: The points to transform, shape (N, 3), x, y, z
+                or (N, 2), x, y
         T: The transformation matrix, shape (4, 4) or (3, 3)
 
     Returns:
         The transformed points.
     """
-    if T.shape == (4, 4):
-        T_SE2 = np.identity(3)
-        T_SE2[:2, :2] = T[:2, :2]
-        T_SE2[:2, 2] = T[:2, 3]
+    if T.shape == (4, 4) and points.shape[1] == 3:
+        points = np.hstack((points, np.ones((points.shape[0], 1))))
+        return (T @ points.T).T[:, :3]
+    elif T.shape == (3, 3) and points.shape[1] == 2:
+        points = np.hstack((points, np.ones((points.shape[0], 1))))
+        return (T @ points.T).T[:, :2]
     else:
-        T_SE2 = T
+        raise ValueError("Invalid point or transformation matrix shape.")
 
-    return (T_SE2 @ points.T).T
+def get_relative_pose(pose_t1, pose_t2):
+    """
+    Compute the relative transformation between from pose_t2 to pose_t1.
+
+    Args:
+        pose_t1: The first pose with shape (3,) as (x, y, theta)
+        pose_t2: The second pose with shape (3,) as (x, y, theta)
+
+    Returns:
+        T_relative: The 4x4 relative transformation matrix from pose_t2 to pose_t1.
+    """
+    T1 = T_from_pose(pose_t1)
+    T2 = T_from_pose(pose_t2)
+
+    T_relative = np.dot(np.linalg.inv(T1), T2)
+    return T_relative
 
 def T_from_pose(pose):
     """
@@ -225,7 +243,7 @@ def TSE3_from_TSE2(T_SE2):
     T_SE3[:2, 3] = T_SE2[:2, 2]
     return T_SE3
 
-def plot_trajectories(poses, labels=None, increments=100, figsize=(10, 10), title=None):
+def plot_trajectories(poses, fname, labels=None, increments=100, figsize=(10, 10), title=None):
     """
     Plot the trajectories of different poses.
 
@@ -267,41 +285,25 @@ def plot_trajectories(poses, labels=None, increments=100, figsize=(10, 10), titl
     else:
         plt.title(title)
     plt.legend()
-    plt.show()
+    plt.savefig(fname)
+    plt.close()
 
-def view_point_clouds(pcl_list):
+def view_lidar_points(z_t):
     """
-    Visualize a list of point clouds.
+    Visualize the LIDAR points.
 
     Args:
-        pcl_list: The list of point clouds to visualize.
+        z_t: The LIDAR points, shape (N, 2).
 
     Returns:
         None
     """
-    pcds = []
-    for pcl in pcl_list:
-        if pcl.shape[1] > 3:
-            pcd = o3d.geometry.PointCloud()
-            pcd.points = o3d.utility.Vector3dVector(pcl[:, :3])
-
-            if np.max(pcl[:, 3:]) > 1:
-                pcd.colors = o3d.utility.Vector3dVector(pcl[:, 3:] / 255.0)
-            else:
-                pcd.colors = o3d.utility.Vector3dVector(pcl[:, 3:])
-
-            pcds.append(pcd)
-
-        elif pcl.shape[1] == 3:
-            pcd = o3d.geometry.PointCloud()
-            pcd.points = o3d.utility.Vector3dVector(pcl)
-
-            pcds.append(pcd)
-
-        else:
-            raise ValueError("Invalid point cloud shape. Must be (N, 3) or (N, 6).")
-
-    o3d.visualization.draw_geometries(pcds)
+    plt.figure(figsize=(10, 10))
+    plt.scatter(z_t[:, 0], z_t[:, 1], s=1)
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    plt.title('LIDAR Points')
+    plt.show()
 
 def color_point_cloud(pcl, color):
     """

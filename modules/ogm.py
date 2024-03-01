@@ -63,7 +63,7 @@ class OccupancyGridMap:
         self.grid_map[pmf <= 0.5] = 0.
         self.grid_map[pmf == 0.5] = 0.5
 
-    def plot_log_odds_map(self):
+    def plot_log_odds_map(self, dataset_num):
         """
         Plot the occupancy grid map.
 
@@ -73,6 +73,8 @@ class OccupancyGridMap:
         Returns:
             None
         """
+        fname = 'images/log_odds_map_' + dataset_num + '.png'
+
         # Normalize the log odds to be between 0 and 1.
         numerator = self.grid_map_log_odds - np.min(self.grid_map_log_odds)
         denominator = np.max(self.grid_map_log_odds) - np.min(self.grid_map_log_odds)
@@ -81,7 +83,8 @@ class OccupancyGridMap:
 
         plt.figure(figsize=(10, 10))
         plt.imshow(emphasized_log_odds, cmap='gray', interpolation='nearest')
-        plt.show()
+        plt.savefig(fname)
+        plt.close()
 
     def plot_map(self):
         """
@@ -95,7 +98,8 @@ class OccupancyGridMap:
         """
         plt.figure(figsize=(10, 10))
         plt.imshow(self.grid_map, cmap='gray')
-        plt.show()
+        plt.savefig('images/grid_map.png')
+        plt.close()
 
     def world2grid(self, x, y):
         """
@@ -184,7 +188,6 @@ class OccupancyGridMap:
 
         # prevent overconfidence
         self.grid_map_log_odds = np.clip(self.grid_map_log_odds, a_min=-20, a_max=20)
-
 
     def bresenham2D(self, sx, sy, ex, ey):
         '''

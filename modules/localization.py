@@ -1,9 +1,10 @@
-import matplotlib.pyplot as plt
-from tqdm import tqdm
-from .icp import run_icp
 import numpy as np
+from tqdm import tqdm
 
 from .utils import *
+from .icp import run_icp
+
+from sklearn.cluster import DBSCAN
 
 WHEEL_DIAMETER = 0.254
 TICK_PER_REV = 360
@@ -116,7 +117,10 @@ def poses_from_scan_matching(x_ts, z_ts, return_relative_poses=False):
         pose_next_odom = x_ts[i]
         T_init = get_relative_pose(pose_curr, pose_next_odom)
 
-        T_icp = run_icp(z_ts[i], z_ts[i-1], init_transform=TSE3_from_TSE2(T_init))
+        T_icp = run_icp(
+            z_ts[i], z_ts[i-1], init_transform=TSE3_from_TSE2(T_init),
+            epsilon=0.001
+        )
         T_icp = TSE2_from_TSE3(T_icp)
         relative_poses.append(T_icp)
 
@@ -194,7 +198,62 @@ def dist_from_encoder(counts):
 
     return distance_average
 
-def get_lidar_data(lidar_ranges, lidar_range_min, lidar_range_max):
+def DBSCAN_outliers_removal(z_ts, eps=0.5, min_samples=10):
+    """
+    Remove outliers from the scan data using DBSCAN and LOF.
+
+    Args:
+        scan: The scan data.
+        eps: The maximum distance between two samples for one to be considered as in the neighborhood of the other.
+        min_samples: The number of samples in a neighborhood for a point to be considered as a core point.
+
+    Returns:
+        The scan data with the outliers removed.
+    """
+    print(f"DBSCAN: eps={eps}, min_samples={min_samples}")
+    z_ts_processed = []
+    for i in tqdm(range(len(z_ts))):
+        dbscan = DBSCAN(eps=eps, min_samples=min_samples)
+        labels = dbscan.fit_predict(z_ts[i])
+        non_outliers_mask = labels != -1
+        z_ts_processed.append(z_ts[i][non_outliers_mask])
+    print("")
+    return z_ts_processed
+
+def statistical_outliers_removal(z_ts, k_std=3):
+    """
+    Remove outliers from the scan data using statistical methods.
+
+    Args:
+        scan: The scan data.
+        k_std: The number of standard deviations to consider as an outlier.
+
+    Returns:
+        The scan data with the outliers removed.
+    """
+    print(f"Statistical outliers removal: k_std={k_std}")
+    all_points = np.vstack(z_ts)
+    distances = np.sqrt(np.sum(all_points**2, axis=1))
+    mean_distance = np.mean(distances)
+    std_distance = np.std(distances)
+    threshold_distance = mean_distance + k_std * std_distance
+    filtered_scans = []
+    for i in tqdm(range(len(z_ts))):
+        scan = z_ts[i]
+        scan_distances = np.sqrt(np.sum(scan**2, axis=1))
+        filtered_scan = scan[scan_distances < threshold_distance]
+        filtered_scans.append(filtered_scan)
+
+    print(f"Mean distance: {mean_distance:.3f}")
+    print(f"Std distance: {std_distance:.3f}")
+    print(f"Threshold distance: {threshold_distance:.3f}")
+    return filtered_scans
+
+def get_lidar_data(
+    lidar_ranges,
+    lidar_range_min,
+    lidar_range_max,
+):
     """
     Get the lidar data from the lidar ranges as (x, y) coordinates in the
     robot frame for N scans.
@@ -203,11 +262,13 @@ def get_lidar_data(lidar_ranges, lidar_range_min, lidar_range_max):
         lidar_ranges: All the lidar ranges for N scans, shape (N, 1081)
         lidar_range_min: The minimum range of the lidar.
         lidar_range_max: The maximum range of the lidar.
+        filter_lidar: Whether to filter the lidar data.
 
     Returns:
         A list where each element i is of shape (ni, 2) containing the (x, y)
         coordinates of the lidar data (in the ith scan) in the robot frame.
     """
+    print("Processing lidar data...")
     # Constants
     angle_min = -135 * (np.pi / 180)  # Convert -135 degrees to radians
     angle_max = 135 * (np.pi / 180)   # Convert 135 degrees to radians
@@ -244,3 +305,13 @@ def get_lidar_data(lidar_ranges, lidar_range_min, lidar_range_max):
         processed_scans.append(x_y_z[:, :2])
 
     return processed_scans
+
+def transform_lidar_to_world_frame(poses, z_ts):
+    z_ts_world = []
+    for i in range(len(z_ts)):
+        z_t = z_ts[i]
+        pose_t = poses[i]
+        T = T_from_pose(pose_t)
+        z_t_world = transform_points(z_t, T)
+        z_ts_world.append(z_t_world)
+    return z_ts_world

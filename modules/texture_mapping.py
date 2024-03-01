@@ -1,7 +1,6 @@
 from .utils import transform_points
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-import open3d as o3d
 import numpy as np
 import cv2
 
@@ -47,8 +46,6 @@ def generate_texture_map(
     # texture map, shape: (ogm.grid_map_width, ogm.grid_map_height, 3)
     texture_map = ogm.grid_map
     texture_map = np.repeat(np.expand_dims(texture_map, axis=2), 3, axis=2)
-    trajectory_pcd = o3d.geometry.PointCloud()
-    print("Generating texture map...")
     for rgb_idx in tqdm(range(kinect.rgb_stamps.shape[0])):
         x_t = x_ts[closest_pose_stamps_indices[rgb_idx]]
         disp_img_idx = closest_disp_stamps_indices[rgb_idx]
@@ -101,25 +98,7 @@ def generate_texture_map(
     texture_map = texture_map.astype(np.float32) / 255.0
     return texture_map
 
-def create_open3d_point_cloud(point_cloud_np):
-    """
-    Create an Open3D point cloud from a numpy point cloud.
-
-    Args:
-        point_cloud_np: The numpy point cloud, shape (N, 6).
-
-    Returns:
-        The Open3D point cloud.
-    """
-    point_cloud_np[:, 3:] = point_cloud_np[:, 3:] / 255.0
-
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(point_cloud_np[:, :3])
-    pcd.colors = o3d.utility.Vector3dVector(point_cloud_np[:, 3:])
-
-    return pcd
-
-def plot_texture_map(texture_map, figsize=(10, 10)):
+def plot_texture_map(texture_map, dataset_num, figsize=(10, 10)):
     """
     Plot the texture map.
 
@@ -130,10 +109,13 @@ def plot_texture_map(texture_map, figsize=(10, 10)):
     Returns:
         None
     """
+    fname = 'images/texture_map_' + dataset_num + '.png'
+
     plt.figure(figsize=figsize)
     plt.imshow(texture_map)
     plt.axis("off")
-    plt.show()
+    plt.savefig(fname)
+    plt.close()
 
 def read_image(path, is_disparity=False):
     """
