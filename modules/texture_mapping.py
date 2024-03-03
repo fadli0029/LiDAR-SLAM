@@ -54,9 +54,9 @@ def generate_texture_map(
         disparity_PATH = "dataRGBD/Disparity" + str(dataset_num) + "/" +\
                          "disparity" + str(dataset_num) + "_" +\
                          str(disp_img_idx) + ".png"
-        rgb_PATH      = "dataRGBD/RGB" + str(dataset_num) + "/" +\
-                        "rgb" +str(dataset_num) + "_" +\
-                        str(rgb_idx+1) + ".png"
+        rgb_PATH       = "dataRGBD/RGB" + str(dataset_num) + "/" +\
+                         "rgb" +str(dataset_num) + "_" +\
+                         str(rgb_idx+1) + ".png"
         disparity_image = read_image(disparity_PATH, is_disparity=True)
         depth_image = get_depth_image(disparity_image)
         rgb_image = read_image(rgb_PATH)
@@ -98,7 +98,7 @@ def generate_texture_map(
     texture_map = texture_map.astype(np.float32) / 255.0
     return texture_map
 
-def plot_texture_map(texture_map, dataset_num, figsize=(10, 10)):
+def plot_texture_map(texture_map, fname, figsize=(10, 10)):
     """
     Plot the texture map.
 
@@ -109,8 +109,6 @@ def plot_texture_map(texture_map, dataset_num, figsize=(10, 10)):
     Returns:
         None
     """
-    fname = 'images/texture_map_' + dataset_num + '.png'
-
     plt.figure(figsize=figsize)
     plt.imshow(texture_map)
     plt.axis("off")

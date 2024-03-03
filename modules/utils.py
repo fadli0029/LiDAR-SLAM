@@ -1,6 +1,5 @@
 import os
 import numpy as np
-import open3d as o3d
 from matplotlib import pyplot as plt
 
 def save_numpy(array, filename):
@@ -131,13 +130,10 @@ def synchronize_sensors(*sensors, base_sensor_index=0):
     base_sensor = sensors[base_sensor_index]
     base_indices = np.arange(len(base_sensor.stamps))
 
-    # Iterate through each sensor and synchronize it with the base sensor
     for i, sensor in enumerate(sensors):
         if i == base_sensor_index:
-            # Update the base sensor with its own indices (essentially no change)
             sensor.update_synced_data(base_indices)
         else:
-            # Find nearest indices for current sensor data based on base sensor timestamps
             sensor_indices = [find_nearest(sensor.stamps, stamp) for stamp in base_sensor.stamps]
             sensor.update_synced_data(sensor_indices)
 
@@ -243,12 +239,13 @@ def TSE3_from_TSE2(T_SE2):
     T_SE3[:2, 3] = T_SE2[:2, 2]
     return T_SE3
 
-def plot_trajectories(poses, fname, labels=None, increments=100, figsize=(10, 10), title=None):
+def plot_trajectories(poses, fname, labels=None, figsize=(10, 10), title=None):
     """
     Plot the trajectories of different poses.
 
     Args:
         poses: The poses to plot, list of (N, 3) arrays.
+        fname: The name of the file to save the plot to.
         labels: The labels for each pose, list of strings.
         increments: The number of increments to plot for each trajectory.
         figsize: The size of the figure.
@@ -264,11 +261,9 @@ def plot_trajectories(poses, fname, labels=None, increments=100, figsize=(10, 10
     for idx, x_ts in enumerate(poses):
         x = x_ts[:, 0]
         y = x_ts[:, 1]
-        yaw = x_ts[:, 2]
 
         # Ensure we have enough colors, cycle if necessary
         plot_color = colors[idx % len(colors)]
-        arrow_color = arrow_colors[idx % len(arrow_colors)]
 
         if labels is None:
             plt.plot(x, y, label=f'Robot {idx+1}', color=plot_color)
@@ -304,20 +299,3 @@ def view_lidar_points(z_t):
     plt.ylabel('Y')
     plt.title('LIDAR Points')
     plt.show()
-
-def color_point_cloud(pcl, color):
-    """
-    Color a point cloud with a single color.
-
-    Args:
-        pcl: The point cloud to color, shape (N, 6)
-        color: The color to use, shape (3,)
-
-    Returns:
-        The colored point cloud.
-    """
-    if pcl.shape[1] != 6:
-        raise ValueError("Invalid point cloud shape. Must be (N, 6).")
-
-    pcl[:, 3:] = color
-    return pcl

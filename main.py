@@ -13,32 +13,29 @@ from modules.texture_mapping import generate_texture_map, plot_texture_map
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Generate an Occupancy Grid Map')
-    parser.add_argument('--dataset', type=int, help='The dataset number', default=20)
-    parser.add_argument('--dataset_path', type=str, help='The path to the dataset', default='data/')
-    parser.add_argument('--poses_path', type=str, help='The path to save the generated poses', default='outputs/poses.npy')
-    parser.add_argument('--relative_poses_path', type=str, help='The path to save the generated relative poses', default='outputs/relative_poses.npy')
-    parser.add_argument('--load_poses_path', type=str, help='The path to available pose estimate', default='outputs/poses.npy')
-    parser.add_argument('--load_relative_poses_path', type=str, help='The path to available relative pose estimate', default='outputs/relative_poses.npy')
-    parser.add_argument('--no_load_poses', action='store_true', help='Do not load the available pose estimate')
-    parser.add_argument('--res', type=float, help='The resolution of the map', default=0.05)
-    parser.add_argument('--width', type=int, help='The width of the map', default=60)
-    parser.add_argument('--height', type=int, help='The height of the map', default=60)
-    parser.add_argument('--logodds_map_path', type=str, help='The path to save the map', default='outputs/logodds_map.npy')
-    parser.add_argument('--map_path', type=str, help='The path to save the map', default='outputs/map.npy')
-    parser.add_argument('--generate_texture_map', action='store_true', help='Generate the texture map')
+
+    # Pose estimation settings
+    parser.add_argument('--mode', type=str, help='The mode to use for pose estimation', default='odom')
     parser.add_argument('--filter_lidar', action='store_true', help='Filter the lidar data')
     parser.add_argument('--fixed_interval', type=int, help='The fixed interval for loop closure', default=10)
 
-    args = parser.parse_args()
+    # Dataset settings
+    parser.add_argument('--dataset', type=int, help='The dataset number', default=20)
+    parser.add_argument('--dataset_path', type=str, help='The path to the dataset', default='data/')
 
-    # Loading args
-    print("====================================================")
-    print("Command line arguments")
-    print("====================================================")
-    for arg in vars(args):
-        print(f"{arg}: {getattr(args, arg)}")
-    print("")
-    print("")
+    # Occupancy Grid Map settings
+    parser.add_argument('--res', type=float, help='The resolution of the map', default=0.05)
+    parser.add_argument('--width', type=int, help='The width of the map', default=60)
+    parser.add_argument('--height', type=int, help='The height of the map', default=60)
+
+    # Generated images settings
+    parser.add_argument('--logodds_map_path', type=str, help='The path to save the map', default='logodds_map.png')
+    parser.add_argument('--texture_map_path', type=str, help='The path to save the texture map', default='texture_map.png')
+
+    # Misc. settings
+    parser.add_argument('--generate_texture_map', action='store_true', help='Generate the texture map')
+
+    args = parser.parse_args()
 
     dataset_num = args.dataset
     dataset_names = {
@@ -48,8 +45,24 @@ if __name__ == "__main__":
         "rgbd": "Kinect",
     }
     dataset_path = args.dataset_path
-    args.poses_path = args.poses_path.split(".npy")[0] + "_" + str(dataset_num) + ".npy"
-    args.relative_poses_path = args.relative_poses_path.split(".npy")[0] + "_" + str(dataset_num) + ".npy"
+
+    if args.filter_lidar:
+        args.logodds_map_path = "images_filtered/" + args.logodds_map_path
+        args.texture_map_path = "images_filtered/" + args.texture_map_path
+    else:
+        args.logodds_map_path = "images/" + args.logodds_map_path
+        args.texture_map_path = "images/" + args.texture_map_path
+    args.logodds_map_path = args.logodds_map_path.split(".")[0] + "_" + args.mode + "_" +str(dataset_num) + ".png"
+    args.texture_map_path = args.texture_map_path.split(".")[0] + "_" + args.mode + "_" +str(dataset_num) + ".png"
+
+    print("====================================================")
+    print("Command line arguments")
+    print("====================================================")
+    for arg in vars(args):
+        print(f"{arg}: {getattr(args, arg)}")
+    print("output: outputs/")
+    print("")
+    print("")
 
     # Load the data
     print("====================================================")
@@ -66,7 +79,7 @@ if __name__ == "__main__":
     print("")
 
     print("====================================================")
-    print("Processing sensor data...")
+    print("Processing sensors data...")
     print("====================================================")
     z_ts = loc.get_lidar_data(lidar.ranges_synced, lidar.range_min, lidar.range_max)
     if args.filter_lidar:
@@ -89,113 +102,94 @@ if __name__ == "__main__":
 
     # Estimate poses
     print("====================================================")
-    print("Estimating the poses...")
+    print("Estimating the poses using odometry...")
     print("====================================================")
-    poses_odom, relative_poses_odom = loc.poses_from_odometry(
+    poses, relative_poses = loc.poses_from_odometry(
         v_ts, w_ts, return_relative_poses=True
     )
-    if not args.no_load_poses:
-        if args.load_poses_path and args.load_relative_poses_path:
-            print("Found saved poses (.npy), loading it...\n")
-            poses_scan_matching = load_numpy(args.load_poses_path)
-            relative_poses_scan_matching = load_numpy(args.load_relative_poses_path)
-    else:
-        poses_scan_matching, relative_poses_scan_matching = loc.poses_from_scan_matching(
-            poses_odom, z_ts, return_relative_poses=True
+    save_numpy(poses, "outputs/poses_odom_" + str(dataset_num) + ".npy")
+    save_numpy(relative_poses, "outputs/relative_poses_odom_" + str(dataset_num) + ".npy")
+    print(f"poses_odom_{dataset_num}.npy saved at outputs/")
+    print(f"relative_poses_odom_{dataset_num}.npy saved at outputs/")
+    print("")
+    print("")
+    if args.mode == "scan_matching":
+        print("====================================================")
+        print("Estimating the poses using scan matching...")
+        print("====================================================")
+        poses, relative_poses = loc.poses_from_scan_matching(
+            poses, z_ts, return_relative_poses=True
         )
-    save_numpy(poses_scan_matching, args.poses_path)
-    save_numpy(relative_poses_scan_matching, args.relative_poses_path)
-    print("")
-    print("")
-
-    # Plot the trajectory for sanity check
-    print("====================================================")
-    print("Saving the trajectories (odom vs scan matching)...")
-    print("====================================================")
-    fname = "images/odom_vs_scan_matching_" + str(dataset_num) + ".png"
-    labels = [
-        "Odometry",
-        "Scan Matching"
-    ]
-    loc.plot_trajectories(
-        [poses_odom, poses_scan_matching],
-        fname,
-        labels=labels,
-        figsize=(10, 10)
-    )
-    print("Done!")
-    print("")
-    print("")
+        save_numpy(poses, "outputs/poses_scan_matching_" + str(dataset_num) + ".npy")
+        save_numpy(relative_poses, "outputs/relative_poses_scan_matching_" + str(dataset_num) + ".npy")
+        print(f"poses_scan_matching_{dataset_num}.npy saved at outputs/")
+        print(f"relative_poses_scan_matching_{dataset_num}.npy saved at outputs/")
+        print("")
+        print("")
 
     # Gtsam optimization
-    print("====================================================")
-    print("Optimizing the poses using GTSAM...")
-    print("====================================================")
-    graph = gtsam.NonlinearFactorGraph()
-    noise_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.1, 0.1, 0.1]))
-    graph.add(gtsam.PriorFactorPose2(0, gtsam.Pose2(0, 0, 0), noise_model))
-    noise_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.3, 0.3, 0.3]))
-    for i in range(relative_poses_scan_matching.shape[0]):
-        pose = pose_from_T(relative_poses_scan_matching[i])
-        pose = gtsam.Pose2(pose[0], pose[1], pose[2])
-        graph.add(gtsam.BetweenFactorPose2(i, i+1, pose, noise_model))
+    if args.mode == "gtsam":
+        print("====================================================")
+        print("Estimating the poses using scan matching...")
+        print("====================================================")
+        poses, relative_poses = loc.poses_from_scan_matching(
+            poses, z_ts, return_relative_poses=True
+        )
+        save_numpy(poses, "outputs/poses_scan_matching_" + str(dataset_num) + ".npy")
+        save_numpy(relative_poses, "outputs/relative_poses_scan_matching_" + str(dataset_num) + ".npy")
+        print(f"poses_scan_matching_{dataset_num}.npy saved at outputs/")
+        print(f"relative_poses_scan_matching_{dataset_num}.npy saved at outputs/")
+        print("")
+        print("")
 
-    # Add loop closure between every 10th pose
-    fixed_interval = args.fixed_interval
-    errors = []
-    loops = 0
-    for i in range(0, poses_scan_matching.shape[0]-fixed_interval, fixed_interval):
-        T_icp, error = run_icp(z_ts[i], z_ts[i+fixed_interval], return_error=True, normalize_error=True)
-        errors.append(error)
-        T_icp = TSE2_from_TSE3(T_icp)
-        angle = np.arctan2(T_icp[1, 0], T_icp[0, 0])
-        translation = np.linalg.norm(T_icp[:2, 2])
-        if translation < max_distance and np.rad2deg(angle) < max_yaw:
-            noise_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.3, 0.3, 0.3]))
-            p_relative = pose_from_T(T_icp)
-            p_relative = gtsam.Pose2(p_relative[0], p_relative[1], p_relative[2])
-            graph.add(gtsam.BetweenFactorPose2(i, i+fixed_interval, p_relative, noise_model))
-            loops += 1
-    print(f"Added {loops} loop closures")
+        print("====================================================")
+        print("Optimizing poses (from scan matching) using GTSAM...")
+        print("====================================================")
+        graph = gtsam.NonlinearFactorGraph()
+        noise_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.1, 0.1, 0.1]))
+        graph.add(gtsam.PriorFactorPose2(0, gtsam.Pose2(0, 0, 0), noise_model))
+        noise_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.3, 0.3, 0.3]))
+        for i in range(relative_poses.shape[0]):
+            pose = pose_from_T(relative_poses[i])
+            pose = gtsam.Pose2(pose[0], pose[1], pose[2])
+            graph.add(gtsam.BetweenFactorPose2(i, i+1, pose, noise_model))
 
-    initial_estimate = gtsam.Values()
-    for i in range(poses_odom.shape[0]):
-        pose = poses_odom[i]
-        pose = gtsam.Pose2(pose[0], pose[1], pose[2])
-        initial_estimate.insert(i, pose)
+        # Add loop closure between every 10th pose
+        fixed_interval = args.fixed_interval
+        errors = []
+        loops = 0
+        for i in range(0, poses.shape[0]-fixed_interval, fixed_interval):
+            T_icp, error = run_icp(z_ts[i], z_ts[i+fixed_interval], return_error=True, normalize_error=True)
+            errors.append(error)
+            T_icp = TSE2_from_TSE3(T_icp)
+            angle = np.arctan2(T_icp[1, 0], T_icp[0, 0])
+            translation = np.linalg.norm(T_icp[:2, 2])
+            if translation < max_distance and np.rad2deg(angle) < max_yaw:
+                noise_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.3, 0.3, 0.3]))
+                p_relative = pose_from_T(T_icp)
+                p_relative = gtsam.Pose2(p_relative[0], p_relative[1], p_relative[2])
+                graph.add(gtsam.BetweenFactorPose2(i, i+fixed_interval, p_relative, noise_model))
+                loops += 1
+        print(f"Added {loops} loop closures")
 
-    optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initial_estimate)
-    optimized_values = optimizer.optimize()
+        initial_estimate = gtsam.Values()
+        for i in range(poses.shape[0]):
+            pose = poses[i]
+            pose = gtsam.Pose2(pose[0], pose[1], pose[2])
+            initial_estimate.insert(i, pose)
 
-    poses_optimized = []
-    for i in range(poses_scan_matching.shape[0]):
-        pose = optimized_values.atPose2(i)
-        poses_optimized.append(np.array([pose.x(), pose.y(), pose.theta()]))
-    poses_optimized = np.array(poses_optimized)
-    fname = "outputs/poses_optimized_" + str(dataset_num) + ".npy"
-    save_numpy(poses_optimized, fname)
-    print("")
-    print("")
+        optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initial_estimate)
+        optimized_values = optimizer.optimize()
 
-    # Plot the optimized trajectory
-    print("====================================================")
-    print("Saving the optimized trajectory...")
-    print("====================================================")
-    fname = "images/trajectory_comparison_" + str(dataset_num) + ".png"
-    labels = [
-        "Odometry",
-        "Scan Matching",
-        "Optimized"
-    ]
-    loc.plot_trajectories(
-        [poses_odom, poses_scan_matching, poses_optimized],
-        fname,
-        labels=labels,
-        figsize=(10, 10)
-    )
-    print("Done!")
-    print("")
-    print("")
+        poses_optimized = []
+        for i in range(poses.shape[0]):
+            pose = optimized_values.atPose2(i)
+            poses_optimized.append(np.array([pose.x(), pose.y(), pose.theta()]))
+        poses = np.array(poses_optimized)
+        save_numpy(poses, "outputs/poses_optimized_" + str(dataset_num) + ".npy")
+        print(f"poses_gtsam_{dataset_num}.npy saved at outputs/")
+        print("")
+        print("")
 
     if args.generate_texture_map:
         print("====================================================")
@@ -208,12 +202,11 @@ if __name__ == "__main__":
         ogm = OccupancyGridMap(args.res, max_x, max_y, min_x, min_y)
 
         # Build the map
-        ogm.build_map(poses_optimized, z_ts)
+        ogm.build_map(poses, z_ts)
 
-        # Save the map as image and numpy array
-        ogm.plot_log_odds_map(dataset_num=str(dataset_num))
-        save_numpy(ogm.grid_map_log_odds, args.logodds_map_path)
-        save_numpy(ogm.grid_map_log_odds, args.map_path)
+        # Save the map
+        ogm.plot_log_odds_map(args.logodds_map_path)
+        print(f"Occupancy (logodds) map saved at: {args.logodds_map_path}")
         print("")
         print("")
 
@@ -238,13 +231,17 @@ if __name__ == "__main__":
             [     0,      0,      1]
         ])
 
+        # Generate the texture map
         texture_map = generate_texture_map(
             dataset_num,
-            poses_optimized,
+            poses,
             kinect,
             encoder,
             ogm,
             T_rc,
             K,
         )
-        plot_texture_map(texture_map, str(dataset_num))
+
+        # Save the texture map
+        plot_texture_map(texture_map, args.texture_map_path)
+        print(f"Texture map saved at: {args.texture_map_path}")

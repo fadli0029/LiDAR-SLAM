@@ -12,18 +12,11 @@ def voxel_downsample(point_cloud, voxel_size):
     Returns:
         downsampled_points: numpy array of the downsampled point cloud.
     """
-    # Calculate the minimum and maximum coordinates along each axis
-    min_coords = np.min(point_cloud, axis=0)
-    max_coords = np.max(point_cloud, axis=0)
-
-    # Calculate the dimensions of the grid
-    grid_dimensions = np.ceil((max_coords - min_coords) / voxel_size).astype(int)
-
     # Initialize an empty list to hold the downsampled points
     downsampled_points = []
 
     # Create a voxel grid
-    voxel_indices = np.floor((point_cloud - min_coords) / voxel_size).astype(int)
+    voxel_indices = np.floor((point_cloud - np.min(point_cloud, axis=0)) / voxel_size).astype(int)
 
     # Group points by their voxel index
     unique_voxel_indices, inverse_indices = np.unique(voxel_indices, axis=0, return_inverse=True)
