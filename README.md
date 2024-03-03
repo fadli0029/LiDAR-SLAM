@@ -1,7 +1,7 @@
 # LiDAR-Based SLAM
 
 ## Running (Full) SLAM
-Run the following command to estimate poses and create both occupancy grid map and texture map on dataset 20 using GTSAM with filtered point cloud.
+Run the following command to estimate poses and create both occupancy grid map and texture map on dataset 20 using GTSAM with filtered point cloud:
 ```bash
 python main.py --mode gtsam --filter_lidar --dataset 20 --generate_texture_map
 ```
@@ -24,7 +24,7 @@ Below is the full list of command line arguments:
 | `--generate_texture_map`| Generate the texture map           | N/A (flag)                            |
 
 ## Running `icp_warm_up`
-Run the following command to perform ICP on the test data/objects as outlined in the project write up
+Run the following command to perform ICP on the test data/objects as outlined in the project write up (__note: you must be in the `code/icp_warm_up` directory__):
 ```bash
 python test_icp.py --obj_name drill --num_pc
 ```
@@ -38,7 +38,7 @@ Below is the full list of command line arguments:
 | `--num_pc`                  | Number of point clouds to run the ICP on| N/A (flag)                  |
 
 ## Plotting the trajectories
-Run the following comand to plot the trajectories of the estimated poses
+Run the following comand to plot the trajectories of the estimated poses:
 ```bash
 python plot_trajectories.py --trajectory_files path_to_odom.npy path_to_scan_matching.npy path_to_gtsam.npy --title Trajectories --labels odom scan-matching gtsam --save_path path_to_save.png
 ```
