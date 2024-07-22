@@ -1,8 +1,7 @@
 import os
-import scipy.io as sio
 import numpy as np
 import open3d as o3d
-
+import scipy.io as sio
 
 def read_canonical_model(model_name):
   '''
@@ -49,5 +48,3 @@ def visualize_icp_result(source_pc, target_pc, pose):
   source_pcd.transform(pose)
 
   o3d.visualization.draw_geometries([source_pcd, target_pcd])
-
-

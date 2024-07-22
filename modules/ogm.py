@@ -53,7 +53,6 @@ class OccupancyGridMap:
         Returns:
             None
         """
-        print("Building the map...")
         for i in tqdm(range(len(states))):
             x_t = states[i]
             z_t = meas[i]
@@ -64,7 +63,7 @@ class OccupancyGridMap:
         self.grid_map[pmf <= 0.5] = 0.
         self.grid_map[pmf == 0.5] = 0.5
 
-    def plot_log_odds_map(self):
+    def plot_log_odds_map(self, fname):
         """
         Plot the occupancy grid map.
 
@@ -74,7 +73,7 @@ class OccupancyGridMap:
         Returns:
             None
         """
-        # First, normalize the log odds to be between 0 and 1.
+        # Normalize the log odds to be between 0 and 1.
         numerator = self.grid_map_log_odds - np.min(self.grid_map_log_odds)
         denominator = np.max(self.grid_map_log_odds) - np.min(self.grid_map_log_odds)
         normalized_log_odds = numerator / denominator
@@ -82,9 +81,10 @@ class OccupancyGridMap:
 
         plt.figure(figsize=(10, 10))
         plt.imshow(emphasized_log_odds, cmap='gray', interpolation='nearest')
-        plt.show()
+        plt.savefig(fname)
+        plt.close()
 
-    def plot_map(self):
+    def plot_map(self, fname):
         """
         Plot the occupancy grid map.
 
@@ -96,7 +96,8 @@ class OccupancyGridMap:
         """
         plt.figure(figsize=(10, 10))
         plt.imshow(self.grid_map, cmap='gray')
-        plt.show()
+        plt.savefig(fname)
+        plt.close()
 
     def world2grid(self, x, y):
         """
@@ -176,17 +177,15 @@ class OccupancyGridMap:
                 np.logical_and(points[:, 1] >= 0, points[:, 1] < self.grid_map_height)
             )
 
+            # Update the log odds
             points = points[valid_points]
             if points.shape[0] == 0:
                 continue
-
-            # Update the log odds
             self.grid_map_log_odds[points[:-1, 0], points[:-1, 1]] -= self.logodds_ratio
             self.grid_map_log_odds[points[-1, 0], points[-1, 1]] += self.logodds_ratio
 
         # prevent overconfidence
         self.grid_map_log_odds = np.clip(self.grid_map_log_odds, a_min=-20, a_max=20)
-
 
     def bresenham2D(self, sx, sy, ex, ey):
         '''

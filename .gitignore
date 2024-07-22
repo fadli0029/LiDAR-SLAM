@@ -1,6 +1,8 @@
 .ipynb_checkpoints/
+.virtual_documents/
 .mypy_cache/
 __pycache__/
 .pytest_cache/
+.ipynb
 data/
 dataRGBD/

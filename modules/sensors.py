@@ -2,12 +2,22 @@ from abc import ABC, abstractmethod
 import numpy as np
 
 class Sensor(ABC):
+    """
+    Abstract class for a sensor.
+    """
     def __init__(self):
         pass
 
     def find_nearest(self, array, value):
         """
-        Find the nearest timestamp in an array to a given value.
+        Find the index of the closest value in the array to `value`.
+
+        Args:
+            array: The array to search in
+            value: The value to find the closest match to
+
+        Returns:
+            idx: The index of the closest value in the array to `value`
         """
         array = np.asarray(array, dtype=np.float64)
         idx = (np.abs(array - value)).argmin()
@@ -39,6 +49,9 @@ class Sensor(ABC):
         pass
 
 class Encoder(Sensor):
+    """
+    Class for the encoder sensor.
+    """
     def __init__(self, data):
         super().__init__()
         self.counts = data["counts"]
@@ -55,8 +68,10 @@ class Encoder(Sensor):
         for stamp in base_stamps:
             indices.append(self.find_nearest(self.stamps, stamp))
 
-
 class Imu(Sensor):
+    """
+    Class for the IMU sensor.
+    """
     def __init__(self, data):
         super().__init__()
         self.gyro = data["angular_velocity"]
@@ -77,6 +92,9 @@ class Imu(Sensor):
             indices.append(self.find_nearest(self.stamps, stamp))
 
 class Lidar(Sensor):
+    """
+    Class for the IMU sensor.
+    """
     def __init__(self, data):
         super().__init__()
         self.ranges = data["ranges"]
@@ -100,6 +118,9 @@ class Lidar(Sensor):
             indices.append(self.find_nearest(self.stamps, stamp))
 
 class Kinect(Sensor):
+    """
+    Class for the IMU sensor.
+    """
     def __init__(self, data):
         super().__init__()
         self.disp_stamps = data["disp_stamps"]
